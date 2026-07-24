@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>채팅방 목록 - Chat</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+<header class="app-header">
+    <div class="brand">Chat</div>
+    <div class="user-info">
+        <span id="current-user"></span>
+        <button type="button" class="btn secondary" id="logout-btn">로그아웃</button>
+    </div>
+</header>
+
+<div class="container">
+    <div class="panel">
+        <h2>내 채팅방</h2>
+        <ul class="room-list" id="room-list">
+            <li class="empty-hint">불러오는 중...</li>
+        </ul>
+    </div>
+
+    <div class="panel">
+        <h2>그룹 채팅방 만들기</h2>
+        <form id="create-room-form">
+            <div class="field">
+                <label for="room-name">방 이름</label>
+                <input type="text" id="room-name" required>
+            </div>
+            <div class="field">
+                <label for="room-members">초대할 아이디 (콤마로 구분)</label>
+                <input type="text" id="room-members" placeholder="alice, bob" required>
+            </div>
+            <button type="submit" class="btn">방 만들기</button>
+            <div class="error-text" id="create-room-error"></div>
+        </form>
+    </div>
+
+    <div class="panel">
+        <h2>1:1 DM 시작하기</h2>
+        <form id="dm-form" class="inline-form">
+            <input type="text" id="dm-target" placeholder="상대방 아이디" required>
+            <button type="submit" class="btn">DM 시작</button>
+        </form>
+        <div class="error-text" id="dm-error"></div>
+    </div>
+</div>
+
+<script th:src="@{/js/auth.js}"></script>
+<script th:src="@{/js/rooms.js}"></script>
+</body>
+</html>

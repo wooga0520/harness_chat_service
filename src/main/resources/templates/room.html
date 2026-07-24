@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>채팅방 - Chat</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+<div class="chat-page" id="chat-page" th:attr="data-room-id=${roomId}">
+    <div class="chat-header">
+        <a class="back-link" th:href="@{/rooms}">&larr; 목록</a>
+        <div class="room-title" id="room-title">채팅방</div>
+    </div>
+
+    <div class="chat-log" id="chat-log"></div>
+
+    <form class="chat-input-bar" id="message-form">
+        <input type="text" id="message-input" placeholder="메시지를 입력하세요" autocomplete="off" maxlength="2000">
+        <button type="submit" class="btn">전송</button>
+    </form>
+</div>
+
+<script th:src="@{/webjars/sockjs-client/1.5.1/sockjs.min.js}"></script>
+<script th:src="@{/webjars/stomp-websocket/2.3.4/stomp.min.js}"></script>
+<script th:src="@{/js/auth.js}"></script>
+<script th:src="@{/js/room.js}"></script>
+</body>
+</html>

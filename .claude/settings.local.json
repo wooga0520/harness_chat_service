@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -NoProfile -Command \"Stop-Process -Id 32084 -Force\")",
+      "Bash(powershell -NoProfile -Command \"Get-Process -Id 32084 -ErrorAction SilentlyContinue\")"
+    ]
+  }
+}
