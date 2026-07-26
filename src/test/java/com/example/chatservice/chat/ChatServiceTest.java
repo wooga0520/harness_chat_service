@@ -3,6 +3,7 @@ package com.example.chatservice.chat;
 import com.example.chatservice.chat.dto.ChatMessageResponse;
 import com.example.chatservice.domain.ChatRoom;
 import com.example.chatservice.domain.MessageType;
+import com.example.chatservice.domain.RoomParticipant;
 import com.example.chatservice.domain.User;
 import com.example.chatservice.repository.ChatMessageRepository;
 import com.example.chatservice.repository.ChatRoomRepository;
@@ -15,9 +16,11 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,6 +38,8 @@ class ChatServiceTest {
     @Mock private ChatMessageRepository chatMessageRepository;
     @Mock private UserRepository userRepository;
     @Mock private ChatMessagePublisher chatMessagePublisher;
+    @Mock private PresenceRegistry presenceRegistry;
+    @Mock private SimpMessagingTemplate messagingTemplate;
 
     private ChatService chatService;
     private User sender;
@@ -43,7 +48,8 @@ class ChatServiceTest {
     @BeforeEach
     void setUp() {
         chatService = new ChatService(chatRoomRepository, roomParticipantRepository,
-                chatMessageRepository, userRepository, chatMessagePublisher);
+                chatMessageRepository, userRepository, chatMessagePublisher,
+                presenceRegistry, messagingTemplate);
 
         sender = User.builder().username("alice").password("hash").nickname("Alice").build();
         ReflectionTestUtils.setField(sender, "id", 1L);
@@ -106,5 +112,38 @@ class ChatServiceTest {
                 .hasFieldOrPropertyWithValue("statusCode", HttpStatus.FORBIDDEN);
 
         verifyNoInteractions(chatMessagePublisher);
+    }
+
+    @Test
+    void marksRoomReadForAParticipant() {
+        RoomParticipant participant = RoomParticipant.builder().room(room).user(sender).build();
+        LocalDateTime before = LocalDateTime.now().minusDays(1);
+        ReflectionTestUtils.setField(participant, "lastReadAt", before);
+
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(sender));
+        when(roomParticipantRepository.findByRoomIdAndUserId(10L, 1L)).thenReturn(Optional.of(participant));
+
+        chatService.markRoomRead(10L, "alice");
+
+        assertThat(participant.getLastReadAt()).isAfter(before);
+    }
+
+    @Test
+    void markRoomReadRejectsUnknownSenderWith401() {
+        when(userRepository.findByUsername("ghost")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> chatService.markRoomRead(10L, "ghost"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasFieldOrPropertyWithValue("statusCode", HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void markRoomReadRejectsNonParticipantWith403() {
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(sender));
+        when(roomParticipantRepository.findByRoomIdAndUserId(10L, 1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> chatService.markRoomRead(10L, "alice"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasFieldOrPropertyWithValue("statusCode", HttpStatus.FORBIDDEN);
     }
 }

@@ -34,9 +34,23 @@ public class RoomParticipant {
     @Column(nullable = false, updatable = false)
     private LocalDateTime joinedAt;
 
+    @Column(nullable = false, columnDefinition = "timestamp default now()")
+    private LocalDateTime lastReadAt;
+
     @Builder
     private RoomParticipant(ChatRoom room, User user) {
         this.room = room;
         this.user = user;
+    }
+
+    @PrePersist
+    void prePersist() {
+        if (lastReadAt == null) {
+            lastReadAt = LocalDateTime.now();
+        }
+    }
+
+    public void markRead() {
+        this.lastReadAt = LocalDateTime.now();
     }
 }

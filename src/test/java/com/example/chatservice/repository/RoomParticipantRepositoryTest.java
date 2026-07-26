@@ -30,7 +30,7 @@ class RoomParticipantRepositoryTest extends AbstractRepositoryTest {
         User alice = persistUser("alice");
         User bob = persistUser("bob");
 
-        ChatRoom dm = chatRoomRepository.save(ChatRoom.newDirectRoom());
+        ChatRoom dm = chatRoomRepository.save(ChatRoom.newDirectRoom(alice.getId(), bob.getId()));
         roomParticipantRepository.save(RoomParticipant.builder().room(dm).user(alice).build());
         roomParticipantRepository.save(RoomParticipant.builder().room(dm).user(bob).build());
 
@@ -56,7 +56,7 @@ class RoomParticipantRepositoryTest extends AbstractRepositoryTest {
         User bob = persistUser("bob3");
         User carol = persistUser("carol3");
 
-        ChatRoom dm = chatRoomRepository.save(ChatRoom.newDirectRoom());
+        ChatRoom dm = chatRoomRepository.save(ChatRoom.newDirectRoom(alice.getId(), bob.getId()));
         roomParticipantRepository.save(RoomParticipant.builder().room(dm).user(alice).build());
         roomParticipantRepository.save(RoomParticipant.builder().room(dm).user(bob).build());
 

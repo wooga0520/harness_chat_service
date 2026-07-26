@@ -49,4 +49,10 @@ public class RoomController {
             Principal principal) {
         return ResponseEntity.ok(roomService.getMessages(roomId, principal.getName(), pageable));
     }
+
+    @DeleteMapping("/{roomId}/participants/me")
+    public ResponseEntity<Void> leaveRoom(@PathVariable Long roomId, Principal principal) {
+        roomService.leaveRoom(principal.getName(), roomId);
+        return ResponseEntity.noContent().build();
+    }
 }

@@ -26,9 +26,21 @@ const AUTH = (() => {
         }
     }
 
-    function logout() {
-        clearAuth();
-        window.location.href = '/login';
+    async function logout() {
+        const token = getToken();
+        try {
+            if (token) {
+                await fetch('/api/auth/logout', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+            }
+        } catch (err) {
+            // 서버 요청이 실패해도 클라이언트 쪽 로그아웃은 진행한다.
+        } finally {
+            clearAuth();
+            window.location.href = '/login';
+        }
     }
 
     async function apiFetch(url, options) {
