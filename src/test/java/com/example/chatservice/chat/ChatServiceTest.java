@@ -1,6 +1,7 @@
 package com.example.chatservice.chat;
 
 import com.example.chatservice.chat.dto.ChatMessageResponse;
+import com.example.chatservice.domain.ChatMessage;
 import com.example.chatservice.domain.ChatRoom;
 import com.example.chatservice.domain.MessageType;
 import com.example.chatservice.domain.RoomParticipant;
@@ -39,6 +40,9 @@ class ChatServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private ChatMessagePublisher chatMessagePublisher;
     @Mock private PresenceRegistry presenceRegistry;
+    @Mock private OnlinePresenceService onlinePresenceService;
+    @Mock private PresencePublisher presencePublisher;
+    @Mock private ReadReceiptPublisher readReceiptPublisher;
     @Mock private SimpMessagingTemplate messagingTemplate;
 
     private ChatService chatService;
@@ -49,13 +53,97 @@ class ChatServiceTest {
     void setUp() {
         chatService = new ChatService(chatRoomRepository, roomParticipantRepository,
                 chatMessageRepository, userRepository, chatMessagePublisher,
-                presenceRegistry, messagingTemplate);
+                presenceRegistry, onlinePresenceService, presencePublisher, readReceiptPublisher,
+                messagingTemplate);
 
         sender = User.builder().username("alice").password("hash").nickname("Alice").build();
         ReflectionTestUtils.setField(sender, "id", 1L);
 
         room = ChatRoom.newGroupRoom("general");
         ReflectionTestUtils.setField(room, "id", 10L);
+    }
+
+    private ChatMessage textMessageFrom(User author, ChatRoom inRoom, String content) {
+        ChatMessage message = ChatMessage.builder().room(inRoom).sender(author).type(MessageType.TEXT).content(content).build();
+        ReflectionTestUtils.setField(message, "id", 100L);
+        return message;
+    }
+
+    @Test
+    void senderCanEditTheirOwnTextMessage() {
+        ChatMessage message = textMessageFrom(sender, room, "original");
+        when(chatMessageRepository.findById(100L)).thenReturn(Optional.of(message));
+
+        chatService.editMessage(10L, 100L, "alice", "edited");
+
+        assertThat(message.getContent()).isEqualTo("edited");
+        assertThat(message.getEditedAt()).isNotNull();
+
+        ArgumentCaptor<ChatMessageResponse> captor = ArgumentCaptor.forClass(ChatMessageResponse.class);
+        verify(chatMessagePublisher).publish(captor.capture());
+        assertThat(captor.getValue().content()).isEqualTo("edited");
+        assertThat(captor.getValue().editedAt()).isNotNull();
+    }
+
+    @Test
+    void otherUserCannotEditSomeoneElsesMessage() {
+        ChatMessage message = textMessageFrom(sender, room, "original");
+        when(chatMessageRepository.findById(100L)).thenReturn(Optional.of(message));
+
+        assertThatThrownBy(() -> chatService.editMessage(10L, 100L, "bob", "hacked"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasFieldOrPropertyWithValue("statusCode", HttpStatus.FORBIDDEN);
+
+        assertThat(message.getContent()).isEqualTo("original");
+        verifyNoInteractions(chatMessagePublisher);
+    }
+
+    @Test
+    void deletedMessageCannotBeEditedAgain() {
+        ChatMessage message = textMessageFrom(sender, room, "original");
+        message.delete();
+        when(chatMessageRepository.findById(100L)).thenReturn(Optional.of(message));
+
+        assertThatThrownBy(() -> chatService.editMessage(10L, 100L, "alice", "edited"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasFieldOrPropertyWithValue("statusCode", HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void senderCanDeleteTheirOwnTextMessageAndContentIsMaskedInTheBroadcast() {
+        ChatMessage message = textMessageFrom(sender, room, "secret");
+        when(chatMessageRepository.findById(100L)).thenReturn(Optional.of(message));
+
+        chatService.deleteMessage(10L, 100L, "alice");
+
+        assertThat(message.isDeleted()).isTrue();
+
+        ArgumentCaptor<ChatMessageResponse> captor = ArgumentCaptor.forClass(ChatMessageResponse.class);
+        verify(chatMessagePublisher).publish(captor.capture());
+        assertThat(captor.getValue().deleted()).isTrue();
+        assertThat(captor.getValue().content()).isNull();
+    }
+
+    @Test
+    void otherUserCannotDeleteSomeoneElsesMessage() {
+        ChatMessage message = textMessageFrom(sender, room, "secret");
+        when(chatMessageRepository.findById(100L)).thenReturn(Optional.of(message));
+
+        assertThatThrownBy(() -> chatService.deleteMessage(10L, 100L, "bob"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasFieldOrPropertyWithValue("statusCode", HttpStatus.FORBIDDEN);
+
+        assertThat(message.isDeleted()).isFalse();
+    }
+
+    @Test
+    void editRejectsAMessageFromAnotherRoom() {
+        ChatMessage message = textMessageFrom(sender, room, "original");
+        when(chatMessageRepository.findById(100L)).thenReturn(Optional.of(message));
+
+        assertThatThrownBy(() -> chatService.editMessage(999L, 100L, "alice", "edited"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasFieldOrPropertyWithValue("statusCode", HttpStatus.NOT_FOUND);
     }
 
     @Test

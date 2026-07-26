@@ -1,6 +1,8 @@
 package com.example.chatservice.chat;
 
 import com.example.chatservice.chat.dto.ChatMessageResponse;
+import com.example.chatservice.chat.dto.PresenceEvent;
+import com.example.chatservice.chat.dto.ReadReceiptEvent;
 import com.example.chatservice.chat.dto.TypingEvent;
 import com.example.chatservice.domain.ChatMessage;
 import com.example.chatservice.domain.ChatRoom;
@@ -18,6 +20,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 @Service
 @RequiredArgsConstructor
 public class ChatService {
@@ -28,6 +33,9 @@ public class ChatService {
     private final UserRepository userRepository;
     private final ChatMessagePublisher chatMessagePublisher;
     private final PresenceRegistry presenceRegistry;
+    private final OnlinePresenceService onlinePresenceService;
+    private final PresencePublisher presencePublisher;
+    private final ReadReceiptPublisher readReceiptPublisher;
     private final SimpMessagingTemplate messagingTemplate;
 
     @Transactional
@@ -53,12 +61,59 @@ public class ChatService {
         chatMessagePublisher.publish(ChatMessageResponse.from(message));
     }
 
+    @Transactional
+    public void editMessage(Long roomId, Long messageId, String username, String newContent) {
+        ChatMessage message = getOwnedTextMessage(roomId, messageId, username);
+        if (message.isDeleted()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot edit a deleted message");
+        }
+
+        message.edit(newContent);
+        chatMessagePublisher.publish(ChatMessageResponse.from(message));
+    }
+
+    @Transactional
+    public void deleteMessage(Long roomId, Long messageId, String username) {
+        ChatMessage message = getOwnedTextMessage(roomId, messageId, username);
+        message.delete();
+        chatMessagePublisher.publish(ChatMessageResponse.from(message));
+    }
+
+    private ChatMessage getOwnedTextMessage(Long roomId, Long messageId, String username) {
+        ChatMessage message = chatMessageRepository.findById(messageId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Message not found"));
+
+        if (!message.getRoom().getId().equals(roomId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Message not found");
+        }
+        if (message.getType() != MessageType.TEXT) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only text messages can be edited or deleted");
+        }
+        if (!message.getSender().getUsername().equals(username)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not the message sender");
+        }
+
+        return message;
+    }
+
     /**
      * Remembers which room a STOMP session just entered, so a later
      * SessionDisconnectEvent knows where to announce a LEAVE message.
      */
     public void trackPresence(String sessionId, Long roomId, String username) {
         presenceRegistry.track(sessionId, roomId, username);
+    }
+
+    /**
+     * Called from the STOMP connect listener. Marks the user online (Redis-backed, shared
+     * across instances) and, only on an offline-to-online transition, broadcasts a
+     * PresenceEvent to every room the user belongs to.
+     */
+    @Transactional(readOnly = true)
+    public void handleConnect(String sessionId, String username) {
+        userRepository.findByUsername(username).ifPresent(user ->
+                onlinePresenceService.markOnline(sessionId, user.getId())
+                        .ifPresent(userId -> broadcastPresence(user, true)));
     }
 
     /**
@@ -76,13 +131,31 @@ public class ChatService {
                 // in another tab before this session disconnected) -- fine to ignore.
             }
         });
+
+        onlinePresenceService.markOffline(sessionId)
+                .flatMap(userRepository::findById)
+                .ifPresent(user -> broadcastPresence(user, false));
+    }
+
+    private void broadcastPresence(User user, boolean online) {
+        List<Long> roomIds = roomParticipantRepository.findRoomsByUserId(user.getId()).stream()
+                .map(ChatRoom::getId)
+                .collect(Collectors.toList());
+
+        if (roomIds.isEmpty()) {
+            return;
+        }
+
+        presencePublisher.publish(new PresenceEvent(user.getId(), user.getUsername(), user.getNickname(), online, roomIds));
     }
 
     /**
      * Marks the room read as of now for this user, called when a STOMP session enters
-     * the room (see ChatController#enter). RoomParticipant is a managed entity fetched
-     * inside this transaction, so mutating it via markRead() is enough -- no explicit
-     * save needed, Hibernate flushes the change on commit.
+     * the room (see ChatController#enter) or explicitly signals it has read up to now
+     * (see ChatController#read). RoomParticipant is a managed entity fetched inside this
+     * transaction, so mutating it via markRead() is enough -- no explicit save needed,
+     * Hibernate flushes the change on commit. The resulting watermark is broadcast via
+     * Redis so every client viewing the room can recompute per-message read counts.
      */
     @Transactional
     public void markRoomRead(Long roomId, String username) {
@@ -93,6 +166,9 @@ public class ChatService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a participant of this room"));
 
         participant.markRead();
+
+        readReceiptPublisher.publish(
+                new ReadReceiptEvent(roomId, user.getId(), user.getUsername(), participant.getLastReadAt()));
     }
 
     /**

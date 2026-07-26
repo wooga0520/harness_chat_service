@@ -1,15 +1,18 @@
 package com.example.chatservice.room;
 
 import com.example.chatservice.chat.ChatService;
+import com.example.chatservice.chat.OnlinePresenceService;
 import com.example.chatservice.chat.dto.ChatMessageResponse;
 import com.example.chatservice.domain.ChatRoom;
 import com.example.chatservice.domain.MessageType;
+import com.example.chatservice.domain.ParticipantRole;
 import com.example.chatservice.domain.RoomParticipant;
 import com.example.chatservice.domain.User;
 import com.example.chatservice.repository.ChatMessageRepository;
 import com.example.chatservice.repository.ChatRoomRepository;
 import com.example.chatservice.repository.RoomParticipantRepository;
 import com.example.chatservice.repository.UserRepository;
+import com.example.chatservice.room.dto.MemberResponse;
 import com.example.chatservice.room.dto.RoomResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -36,6 +39,7 @@ public class RoomService {
     private final UserRepository userRepository;
     private final PlatformTransactionManager transactionManager;
     private final ChatService chatService;
+    private final OnlinePresenceService onlinePresenceService;
 
     @Transactional
     public RoomResponse createGroupRoom(String creatorUsername, String name, List<String> memberUsernames) {
@@ -46,13 +50,96 @@ public class RoomService {
                 .filter(username -> !username.equals(creatorUsername))
                 .map(this::getUser)
                 .collect(Collectors.toList());
-        members.add(creator);
 
         ChatRoom room = chatRoomRepository.save(ChatRoom.newGroupRoom(name));
+        roomParticipantRepository.save(
+                RoomParticipant.builder().room(room).user(creator).role(ParticipantRole.OWNER).build());
         members.forEach(member -> roomParticipantRepository.save(
-                RoomParticipant.builder().room(room).user(member).build()));
+                RoomParticipant.builder().room(room).user(member).role(ParticipantRole.MEMBER).build()));
 
         return toRoomResponse(room, creatorUsername);
+    }
+
+    @Transactional(readOnly = true)
+    public List<MemberResponse> getMembers(Long roomId, String username) {
+        User user = getUser(username);
+        if (!roomParticipantRepository.existsByRoomIdAndUserId(roomId, user.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a participant of this room");
+        }
+
+        return roomParticipantRepository.findByRoomIdOrderByJoinedAtAsc(roomId).stream()
+                .map(participant -> MemberResponse.of(participant, onlinePresenceService.isOnline(participant.getUser().getId())))
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Any existing member may invite new members (no owner restriction). Usernames that
+     * are already participants or duplicate the requester are silently skipped rather than
+     * erroring, since a race with another invite/DM-creation shouldn't fail the whole call.
+     */
+    @Transactional
+    public void inviteMembers(Long roomId, String requesterUsername, List<String> usernames) {
+        User requester = getUser(requesterUsername);
+        ChatRoom room = chatRoomRepository.findById(roomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
+
+        if (!room.isGroup()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot invite members to a direct message room");
+        }
+        if (!roomParticipantRepository.existsByRoomIdAndUserId(roomId, requester.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a participant of this room");
+        }
+
+        List<User> invitees = usernames.stream()
+                .distinct()
+                .filter(u -> !u.equals(requesterUsername))
+                .map(this::getUser)
+                .filter(u -> !roomParticipantRepository.existsByRoomIdAndUserId(roomId, u.getId()))
+                .collect(Collectors.toList());
+
+        if (invitees.isEmpty()) {
+            return;
+        }
+
+        invitees.forEach(invitee -> roomParticipantRepository.save(
+                RoomParticipant.builder().room(room).user(invitee).role(ParticipantRole.MEMBER).build()));
+
+        String nicknames = invitees.stream().map(User::getNickname).collect(Collectors.joining(", "));
+        chatService.sendMessage(roomId, requesterUsername, MessageType.INVITE,
+                requesterUsername + "님이 " + nicknames + "님을 초대했습니다.");
+    }
+
+    /**
+     * Only the room owner can remove another member. Kicking yourself isn't supported here
+     * -- use the leave endpoint instead, which also handles ownership transfer.
+     */
+    @Transactional
+    public void kickMember(Long roomId, String requesterUsername, Long targetUserId) {
+        User requester = getUser(requesterUsername);
+        ChatRoom room = chatRoomRepository.findById(roomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
+
+        if (!room.isGroup()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot remove members from a direct message room");
+        }
+        if (requester.getId().equals(targetUserId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Use the leave endpoint to remove yourself");
+        }
+
+        RoomParticipant requesterParticipant = roomParticipantRepository.findByRoomIdAndUserId(roomId, requester.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a participant of this room"));
+        if (!requesterParticipant.isOwner()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the room owner can remove members");
+        }
+
+        RoomParticipant targetParticipant = roomParticipantRepository.findByRoomIdAndUserId(roomId, targetUserId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User is not a member of this room"));
+
+        String targetNickname = targetParticipant.getUser().getNickname();
+        roomParticipantRepository.delete(targetParticipant);
+
+        chatService.sendMessage(roomId, requesterUsername, MessageType.KICK,
+                targetNickname + "님이 " + requesterUsername + "님에 의해 방에서 제외되었습니다.");
     }
 
     @Transactional
@@ -113,6 +200,14 @@ public class RoomService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a participant of this room"));
 
         chatService.sendMessage(roomId, username, MessageType.LEAVE, username + "님이 방을 나갔습니다.");
+
+        if (participant.isOwner()) {
+            roomParticipantRepository.findByRoomIdOrderByJoinedAtAsc(roomId).stream()
+                    .filter(p -> !p.getUser().getId().equals(user.getId()))
+                    .findFirst()
+                    .ifPresent(RoomParticipant::promoteToOwner);
+        }
+
         roomParticipantRepository.delete(participant);
     }
 

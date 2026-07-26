@@ -1,6 +1,8 @@
 package com.example.chatservice.config;
 
 import com.example.chatservice.chat.ChatMessageSubscriber;
+import com.example.chatservice.chat.PresenceSubscriber;
+import com.example.chatservice.chat.ReadReceiptSubscriber;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -15,10 +17,22 @@ import tools.jackson.databind.ObjectMapper;
 public class RedisConfig {
 
     private static final String CHAT_MESSAGES_CHANNEL = "chat-messages";
+    private static final String PRESENCE_EVENTS_CHANNEL = "chat-presence-events";
+    private static final String READ_RECEIPT_EVENTS_CHANNEL = "chat-read-events";
 
     @Bean
     public ChannelTopic chatMessagesTopic() {
         return new ChannelTopic(CHAT_MESSAGES_CHANNEL);
+    }
+
+    @Bean
+    public ChannelTopic presenceEventsTopic() {
+        return new ChannelTopic(PRESENCE_EVENTS_CHANNEL);
+    }
+
+    @Bean
+    public ChannelTopic readReceiptEventsTopic() {
+        return new ChannelTopic(READ_RECEIPT_EVENTS_CHANNEL);
     }
 
     @Bean
@@ -41,10 +55,16 @@ public class RedisConfig {
     @Bean
     public RedisMessageListenerContainer redisMessageListenerContainer(RedisConnectionFactory connectionFactory,
                                                                         ChatMessageSubscriber subscriber,
-                                                                        ChannelTopic chatMessagesTopic) {
+                                                                        ChannelTopic chatMessagesTopic,
+                                                                        PresenceSubscriber presenceSubscriber,
+                                                                        ChannelTopic presenceEventsTopic,
+                                                                        ReadReceiptSubscriber readReceiptSubscriber,
+                                                                        ChannelTopic readReceiptEventsTopic) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(connectionFactory);
         container.addMessageListener(subscriber, chatMessagesTopic);
+        container.addMessageListener(presenceSubscriber, presenceEventsTopic);
+        container.addMessageListener(readReceiptSubscriber, readReceiptEventsTopic);
         return container;
     }
 }

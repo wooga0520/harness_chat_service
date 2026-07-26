@@ -3,6 +3,8 @@ package com.example.chatservice.room;
 import com.example.chatservice.chat.dto.ChatMessageResponse;
 import com.example.chatservice.room.dto.CreateRoomRequest;
 import com.example.chatservice.room.dto.DmRequest;
+import com.example.chatservice.room.dto.InviteMembersRequest;
+import com.example.chatservice.room.dto.MemberResponse;
 import com.example.chatservice.room.dto.RoomResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +55,25 @@ public class RoomController {
     @DeleteMapping("/{roomId}/participants/me")
     public ResponseEntity<Void> leaveRoom(@PathVariable Long roomId, Principal principal) {
         roomService.leaveRoom(principal.getName(), roomId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{roomId}/members")
+    public ResponseEntity<List<MemberResponse>> getMembers(@PathVariable Long roomId, Principal principal) {
+        return ResponseEntity.ok(roomService.getMembers(roomId, principal.getName()));
+    }
+
+    @PostMapping("/{roomId}/participants")
+    public ResponseEntity<Void> inviteMembers(@PathVariable Long roomId,
+                                               @Valid @RequestBody InviteMembersRequest request,
+                                               Principal principal) {
+        roomService.inviteMembers(roomId, principal.getName(), request.usernames());
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{roomId}/participants/{userId}")
+    public ResponseEntity<Void> kickMember(@PathVariable Long roomId, @PathVariable Long userId, Principal principal) {
+        roomService.kickMember(roomId, principal.getName(), userId);
         return ResponseEntity.noContent().build();
     }
 }

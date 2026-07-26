@@ -30,9 +30,11 @@
                 <label for="room-name">방 이름</label>
                 <input type="text" id="room-name" required>
             </div>
-            <div class="field">
-                <label for="room-members">초대할 아이디 (콤마로 구분)</label>
-                <input type="text" id="room-members" placeholder="alice, bob" required>
+            <div class="field user-search-field">
+                <label for="room-members-search">초대할 사용자 검색</label>
+                <input type="text" id="room-members-search" placeholder="아이디 또는 닉네임" autocomplete="off">
+                <ul class="user-search-results hidden" id="room-members-results"></ul>
+                <div class="chip-list" id="selected-group-members"></div>
             </div>
             <button type="submit" class="btn">방 만들기</button>
             <div class="error-text" id="create-room-error"></div>
@@ -41,8 +43,12 @@
 
     <div class="panel">
         <h2>1:1 DM 시작하기</h2>
-        <form id="dm-form" class="inline-form">
-            <input type="text" id="dm-target" placeholder="상대방 아이디" required>
+        <form id="dm-form">
+            <div class="field user-search-field">
+                <label for="dm-target-search">상대방 검색</label>
+                <input type="text" id="dm-target-search" placeholder="아이디 또는 닉네임" autocomplete="off">
+                <ul class="user-search-results hidden" id="dm-target-results"></ul>
+            </div>
             <button type="submit" class="btn">DM 시작</button>
         </form>
         <div class="error-text" id="dm-error"></div>

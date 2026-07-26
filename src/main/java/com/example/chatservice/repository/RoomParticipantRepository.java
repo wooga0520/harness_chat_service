@@ -18,6 +18,9 @@ public interface RoomParticipantRepository extends JpaRepository<RoomParticipant
     @Query("select rp from RoomParticipant rp join fetch rp.user where rp.room.id in :roomIds")
     List<RoomParticipant> findByRoomIdIn(@Param("roomIds") List<Long> roomIds);
 
+    @Query("select rp from RoomParticipant rp join fetch rp.user where rp.room.id = :roomId order by rp.joinedAt asc")
+    List<RoomParticipant> findByRoomIdOrderByJoinedAtAsc(@Param("roomId") Long roomId);
+
     @Query("select rp.room from RoomParticipant rp where rp.user.id = :userId order by rp.room.id desc")
     List<ChatRoom> findRoomsByUserId(@Param("userId") Long userId);
 

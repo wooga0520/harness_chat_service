@@ -18,7 +18,7 @@ class RedisDispatchDebugTest extends AbstractIntegrationTest {
 
     @Test
     void typedDeserializeRoundTrip() {
-        ChatMessageResponse resp = new ChatMessageResponse(1L, 2L, 3L, "user123", "nick", MessageType.TEXT, "hello world", LocalDateTime.now());
+        ChatMessageResponse resp = new ChatMessageResponse(1L, 2L, 3L, "user123", "nick", MessageType.TEXT, "hello world", LocalDateTime.now(), null, false);
 
         byte[] bytes = serializer.serialize(resp);
         ChatMessageResponse deserialized = serializer.deserialize(bytes, ChatMessageResponse.class);

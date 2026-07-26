@@ -11,6 +11,7 @@
     <div class="chat-header">
         <a class="back-link" th:href="@{/rooms}">&larr; 목록</a>
         <div class="room-title" id="room-title">채팅방</div>
+        <button type="button" class="btn secondary" id="member-panel-toggle">멤버</button>
     </div>
 
     <div class="chat-log" id="chat-log"></div>
@@ -19,6 +20,18 @@
         <input type="text" id="message-input" placeholder="메시지를 입력하세요" autocomplete="off" maxlength="2000">
         <button type="submit" class="btn">전송</button>
     </form>
+
+    <div class="member-panel hidden" id="member-panel">
+        <div class="member-panel-header">
+            <span>멤버</span>
+            <button type="button" id="member-panel-close">&times;</button>
+        </div>
+        <ul class="member-list" id="member-list"></ul>
+        <div class="member-invite">
+            <input type="text" id="invite-search-input" placeholder="초대할 사용자 검색" autocomplete="off">
+            <ul class="user-search-results hidden" id="invite-search-results"></ul>
+        </div>
+    </div>
 </div>
 
 <script th:src="@{/webjars/sockjs-client/1.5.1/sockjs.min.js}"></script>

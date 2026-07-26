@@ -13,7 +13,9 @@ public record ChatMessageResponse(
         String senderNickname,
         MessageType type,
         String content,
-        LocalDateTime sentAt
+        LocalDateTime sentAt,
+        LocalDateTime editedAt,
+        boolean deleted
 ) {
     public static ChatMessageResponse from(ChatMessage message) {
         return new ChatMessageResponse(
@@ -23,8 +25,10 @@ public record ChatMessageResponse(
                 message.getSender().getUsername(),
                 message.getSender().getNickname(),
                 message.getType(),
-                message.getContent(),
-                message.getSentAt()
+                message.isDeleted() ? null : message.getContent(),
+                message.getSentAt(),
+                message.getEditedAt(),
+                message.isDeleted()
         );
     }
 }

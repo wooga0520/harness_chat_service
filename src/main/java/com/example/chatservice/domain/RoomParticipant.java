@@ -37,10 +37,15 @@ public class RoomParticipant {
     @Column(nullable = false, columnDefinition = "timestamp default now()")
     private LocalDateTime lastReadAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, columnDefinition = "varchar(10) default 'MEMBER'")
+    private ParticipantRole role;
+
     @Builder
-    private RoomParticipant(ChatRoom room, User user) {
+    private RoomParticipant(ChatRoom room, User user, ParticipantRole role) {
         this.room = room;
         this.user = user;
+        this.role = role == null ? ParticipantRole.MEMBER : role;
     }
 
     @PrePersist
@@ -52,5 +57,13 @@ public class RoomParticipant {
 
     public void markRead() {
         this.lastReadAt = LocalDateTime.now();
+    }
+
+    public boolean isOwner() {
+        return this.role == ParticipantRole.OWNER;
+    }
+
+    public void promoteToOwner() {
+        this.role = ParticipantRole.OWNER;
     }
 }

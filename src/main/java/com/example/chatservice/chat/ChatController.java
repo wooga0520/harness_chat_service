@@ -1,6 +1,7 @@
 package com.example.chatservice.chat;
 
 import com.example.chatservice.chat.dto.ChatMessageRequest;
+import com.example.chatservice.chat.dto.EditMessageRequest;
 import com.example.chatservice.chat.dto.TypingRequest;
 import com.example.chatservice.domain.MessageType;
 import jakarta.validation.Valid;
@@ -36,5 +37,21 @@ public class ChatController {
     @MessageMapping("/rooms/{roomId}/typing")
     public void typing(@DestinationVariable Long roomId, @Valid @Payload TypingRequest request, Principal principal) {
         chatService.broadcastTyping(roomId, principal.getName(), request.typing());
+    }
+
+    @MessageMapping("/rooms/{roomId}/messages/{messageId}/edit")
+    public void edit(@DestinationVariable Long roomId, @DestinationVariable Long messageId,
+                      @Valid @Payload EditMessageRequest request, Principal principal) {
+        chatService.editMessage(roomId, messageId, principal.getName(), request.content());
+    }
+
+    @MessageMapping("/rooms/{roomId}/messages/{messageId}/delete")
+    public void delete(@DestinationVariable Long roomId, @DestinationVariable Long messageId, Principal principal) {
+        chatService.deleteMessage(roomId, messageId, principal.getName());
+    }
+
+    @MessageMapping("/rooms/{roomId}/read")
+    public void read(@DestinationVariable Long roomId, Principal principal) {
+        chatService.markRoomRead(roomId, principal.getName());
     }
 }

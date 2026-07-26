@@ -1,9 +1,16 @@
+let groupMemberSearchTimer = null;
+let dmSearchTimer = null;
+const selectedGroupMembers = new Map(); // username -> nickname
+let selectedDmTarget = null; // { username, nickname }
+
 document.addEventListener('DOMContentLoaded', () => {
     AUTH.requireAuth();
     document.getElementById('current-user').textContent = AUTH.getUsername();
     document.getElementById('logout-btn').addEventListener('click', AUTH.logout);
 
     loadRooms();
+    setupUserSearch('room-members-search', 'room-members-results', onGroupMemberPicked);
+    setupUserSearch('dm-target-search', 'dm-target-results', onDmTargetPicked);
 
     document.getElementById('create-room-form').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -11,8 +18,11 @@ document.addEventListener('DOMContentLoaded', () => {
         errorEl.textContent = '';
 
         const name = document.getElementById('room-name').value.trim();
-        const membersRaw = document.getElementById('room-members').value.trim();
-        const memberUsernames = membersRaw.split(',').map(s => s.trim()).filter(Boolean);
+        const memberUsernames = Array.from(selectedGroupMembers.keys());
+        if (memberUsernames.length === 0) {
+            errorEl.textContent = '초대할 사용자를 검색해서 선택해주세요.';
+            return;
+        }
 
         try {
             const res = await AUTH.apiFetch('/api/rooms', {
@@ -20,7 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ name, memberUsernames })
             });
             if (!res.ok) {
-                throw new Error('방 생성에 실패했습니다. 아이디를 확인해주세요.');
+                throw new Error('방 생성에 실패했습니다.');
             }
             const room = await res.json();
             window.location.href = '/rooms/' + room.id;
@@ -34,15 +44,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const errorEl = document.getElementById('dm-error');
         errorEl.textContent = '';
 
-        const targetUsername = document.getElementById('dm-target').value.trim();
+        if (!selectedDmTarget) {
+            errorEl.textContent = 'DM을 시작할 사용자를 검색해서 선택해주세요.';
+            return;
+        }
 
         try {
             const res = await AUTH.apiFetch('/api/rooms/dm', {
                 method: 'POST',
-                body: JSON.stringify({ targetUsername })
+                body: JSON.stringify({ targetUsername: selectedDmTarget.username })
             });
             if (!res.ok) {
-                throw new Error('DM 시작에 실패했습니다. 아이디를 확인해주세요.');
+                throw new Error('DM 시작에 실패했습니다.');
             }
             const room = await res.json();
             window.location.href = '/rooms/' + room.id;
@@ -51,6 +64,78 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
+function setupUserSearch(inputId, resultsId, onPick) {
+    const input = document.getElementById(inputId);
+    const resultsEl = document.getElementById(resultsId);
+    if (!input || !resultsEl) return;
+
+    input.addEventListener('input', () => {
+        const query = input.value.trim();
+        clearTimeout(input._searchTimer);
+        if (!query) {
+            renderUserSearchResults(resultsEl, [], onPick);
+            return;
+        }
+        input._searchTimer = setTimeout(async () => {
+            try {
+                const res = await AUTH.apiFetch('/api/users/search?q=' + encodeURIComponent(query));
+                const results = await res.json();
+                renderUserSearchResults(resultsEl, results, onPick);
+            } catch (err) {
+                renderUserSearchResults(resultsEl, [], onPick);
+            }
+        }, 250);
+    });
+}
+
+function renderUserSearchResults(resultsEl, results, onPick) {
+    resultsEl.innerHTML = '';
+    if (results.length === 0) {
+        resultsEl.classList.add('hidden');
+        return;
+    }
+    resultsEl.classList.remove('hidden');
+    results.forEach(u => {
+        const li = document.createElement('li');
+        li.textContent = `${u.nickname} (${u.username})`;
+        li.addEventListener('click', () => onPick(u));
+        resultsEl.appendChild(li);
+    });
+}
+
+function onGroupMemberPicked(user) {
+    selectedGroupMembers.set(user.username, user.nickname);
+    renderSelectedGroupMembers();
+    document.getElementById('room-members-search').value = '';
+    document.getElementById('room-members-results').classList.add('hidden');
+}
+
+function renderSelectedGroupMembers() {
+    const el = document.getElementById('selected-group-members');
+    el.innerHTML = '';
+    selectedGroupMembers.forEach((nickname, username) => {
+        const chip = document.createElement('span');
+        chip.className = 'chip';
+        chip.textContent = nickname;
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.textContent = '×';
+        removeBtn.addEventListener('click', () => {
+            selectedGroupMembers.delete(username);
+            renderSelectedGroupMembers();
+        });
+        chip.appendChild(removeBtn);
+        el.appendChild(chip);
+    });
+}
+
+function onDmTargetPicked(user) {
+    selectedDmTarget = user;
+    document.getElementById('dm-target-search').value = `${user.nickname} (${user.username})`;
+    document.getElementById('dm-target-results').classList.add('hidden');
+    document.getElementById('dm-target-results').innerHTML = '';
+}
 
 async function loadRooms() {
     const listEl = document.getElementById('room-list');

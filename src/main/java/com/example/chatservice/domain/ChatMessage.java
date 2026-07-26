@@ -38,11 +38,25 @@ public class ChatMessage {
     @Column(nullable = false, updatable = false)
     private LocalDateTime sentAt;
 
+    private LocalDateTime editedAt;
+
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private boolean deleted;
+
     @Builder
     private ChatMessage(ChatRoom room, User sender, MessageType type, String content) {
         this.room = room;
         this.sender = sender;
         this.type = type;
         this.content = content;
+    }
+
+    public void edit(String newContent) {
+        this.content = newContent;
+        this.editedAt = LocalDateTime.now();
+    }
+
+    public void delete() {
+        this.deleted = true;
     }
 }
