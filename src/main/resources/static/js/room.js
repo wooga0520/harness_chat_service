@@ -15,11 +15,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const messageForm = document.getElementById('message-form');
     const messageInput = document.getElementById('message-input');
 
-    loadRoomTitle(roomId);
     loadHistory(roomId, chatLog);
     loadMembers(roomId);
-    connect(roomId, chatLog);
     setupMemberPanel(roomId);
+    initRoomStatus(roomId, chatLog);
 
     messageForm.addEventListener('submit', (e) => {
         e.preventDefault();
@@ -39,18 +38,79 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('focus', sendRead);
 });
 
-async function loadRoomTitle(roomId) {
+/**
+ * Fetches the room list to find this room's title and the current user's own
+ * pendingForMe/active flags (see RoomService.toRoomResponses), then decides whether to show
+ * the chat as usual, show an accept/decline banner (I was invited and haven't responded), or
+ * show a waiting banner (I'm accepted but the other DM participant hasn't accepted yet). Only
+ * connects the STOMP session in the first case -- a pending/waiting room has nothing to send
+ * or receive yet, and the server would reject enter/send attempts anyway.
+ */
+async function initRoomStatus(roomId, chatLog) {
     const titleEl = document.getElementById('room-title');
+    let room = null;
     try {
         const res = await AUTH.apiFetch('/api/rooms');
         const rooms = await res.json();
-        const room = rooms.find(r => String(r.id) === String(roomId));
+        room = rooms.find(r => String(r.id) === String(roomId));
         if (room) {
             titleEl.textContent = room.name || room.memberNicknames.join(', ');
         }
     } catch (err) {
-        // keep default title
+        // keep default title; fall through and connect as usual
     }
+
+    if (room && room.pendingForMe) {
+        showChatBanner('이 대화방에 초대되었습니다. 수락해야 메시지를 주고받을 수 있습니다.', [
+            { label: '수락', className: 'accept-btn', onClick: () => respondToRoomInvite(roomId, 'accept') },
+            { label: '거절', className: 'decline-btn', onClick: () => respondToRoomInvite(roomId, 'decline') }
+        ]);
+        setChatInputVisible(false);
+        return;
+    }
+
+    if (room && !room.active) {
+        showChatBanner('상대방이 아직 초대를 수락하지 않았습니다.', []);
+        setChatInputVisible(false);
+        return;
+    }
+
+    connect(roomId, chatLog);
+}
+
+function showChatBanner(text, actions) {
+    const banner = document.getElementById('chat-banner');
+    const textEl = document.getElementById('chat-banner-text');
+    const actionsEl = document.getElementById('chat-banner-actions');
+    if (!banner || !textEl || !actionsEl) return;
+
+    textEl.textContent = text;
+    actionsEl.innerHTML = '';
+    actions.forEach(action => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = action.className;
+        btn.textContent = action.label;
+        btn.addEventListener('click', action.onClick);
+        actionsEl.appendChild(btn);
+    });
+    banner.classList.remove('hidden');
+}
+
+function setChatInputVisible(visible) {
+    const bar = document.getElementById('message-form');
+    if (bar) {
+        bar.classList.toggle('hidden', !visible);
+    }
+}
+
+async function respondToRoomInvite(roomId, action) {
+    try {
+        await AUTH.apiFetch('/api/rooms/' + roomId + '/' + action, { method: 'POST' });
+    } catch (err) {
+        return;
+    }
+    window.location.href = '/rooms';
 }
 
 async function loadHistory(roomId, chatLog) {
@@ -305,6 +365,7 @@ function renderMemberList() {
                 <span class="member-online-dot ${m.online ? 'online' : 'offline'}"></span>
                 <span class="member-nickname">${escapeHtml(m.nickname)}</span>
                 ${m.role === 'OWNER' ? '<span class="member-role-tag">방장</span>' : ''}
+                ${m.status === 'PENDING' ? '<span class="member-role-tag pending">수락 대기</span>' : ''}
                 ${kickBtn}
             `;
             listEl.appendChild(li);

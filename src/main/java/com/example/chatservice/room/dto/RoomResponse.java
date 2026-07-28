@@ -13,7 +13,9 @@ public record RoomResponse(
         boolean group,
         List<String> memberNicknames,
         LastMessagePreview lastMessage,
-        long unreadCount
+        long unreadCount,
+        boolean pendingForMe,
+        boolean active
 ) {
     public record LastMessagePreview(
             String content,
@@ -30,11 +32,13 @@ public record RoomResponse(
         }
     }
 
-    public static RoomResponse of(ChatRoom room, List<String> memberNicknames, LastMessagePreview lastMessage, long unreadCount) {
-        return new RoomResponse(room.getId(), room.getName(), room.isGroup(), memberNicknames, lastMessage, unreadCount);
+    public static RoomResponse of(ChatRoom room, List<String> memberNicknames, LastMessagePreview lastMessage,
+                                   long unreadCount, boolean pendingForMe, boolean active) {
+        return new RoomResponse(room.getId(), room.getName(), room.isGroup(), memberNicknames, lastMessage,
+                unreadCount, pendingForMe, active);
     }
 
     public static RoomResponse ofNew(ChatRoom room, List<String> memberNicknames) {
-        return new RoomResponse(room.getId(), room.getName(), room.isGroup(), memberNicknames, null, 0);
+        return new RoomResponse(room.getId(), room.getName(), room.isGroup(), memberNicknames, null, 0, false, true);
     }
 }

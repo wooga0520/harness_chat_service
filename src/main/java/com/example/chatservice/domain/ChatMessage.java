@@ -5,6 +5,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
@@ -40,7 +41,8 @@ public class ChatMessage {
 
     private LocalDateTime editedAt;
 
-    @Column(nullable = false, columnDefinition = "boolean default false")
+    @Column(nullable = false)
+    @ColumnDefault("false")
     private boolean deleted;
 
     @Builder

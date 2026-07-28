@@ -1,6 +1,7 @@
 package com.example.chatservice.repository;
 
 import com.example.chatservice.domain.ChatRoom;
+import com.example.chatservice.domain.ParticipantStatus;
 import com.example.chatservice.domain.RoomParticipant;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -12,6 +13,8 @@ import java.util.Optional;
 public interface RoomParticipantRepository extends JpaRepository<RoomParticipant, Long> {
 
     boolean existsByRoomIdAndUserId(Long roomId, Long userId);
+
+    boolean existsByRoomIdAndStatus(Long roomId, ParticipantStatus status);
 
     Optional<RoomParticipant> findByRoomIdAndUserId(Long roomId, Long userId);
 

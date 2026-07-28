@@ -29,6 +29,15 @@ REST, 실시간 메시징은 STOMP-over-WebSocket, 영속성은 Postgres, 인스
   docker-compose 파일이 없으므로 직접 띄워야 합니다. 필요하면 `REDIS_HOST`/`REDIS_PORT` 환경변수로
   덮어쓸 수 있습니다.
 
+## 설정 파일과 커밋 규칙
+
+`src/main/resources/application.*`은 외부 클라우드 서비스 접속 정보를 프로퍼티로 주입받는
+실제 배포 설정 파일이며 `.gitignore`에 등록되어 있습니다. **이 파일은 어떤 이유로도 커밋하지
+않습니다** — `git add`, `git commit -a`, 커밋용 파일 목록 구성 시 항상 제외하고, 실수로 스테이징된
+경우 커밋 전에 반드시 unstage합니다. 프로필별 설정은 `application-dev.yml`(로컬 개발, 커밋 가능)과
+`application-prod.yml`에 나뉘어 있는데, `application-prod.yml`에도 실제 자격 증명이 하드코딩되어
+있으므로 절대 커밋하지 않습니다.
+
 ## MCP 서버 연동 및 보안 주의사항
 
 이 저장소에서 Claude Code로 작업하는 환경에는 로컬 파일/셸 도구 외에 MCP(Model Context

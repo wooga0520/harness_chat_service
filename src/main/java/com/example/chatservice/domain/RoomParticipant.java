@@ -5,6 +5,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
@@ -38,14 +39,21 @@ public class RoomParticipant {
     private LocalDateTime lastReadAt;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, columnDefinition = "varchar(10) default 'MEMBER'")
+    @Column(nullable = false, length = 10)
+    @ColumnDefault("'MEMBER'")
     private ParticipantRole role;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    @ColumnDefault("'ACCEPTED'")
+    private ParticipantStatus status;
+
     @Builder
-    private RoomParticipant(ChatRoom room, User user, ParticipantRole role) {
+    private RoomParticipant(ChatRoom room, User user, ParticipantRole role, ParticipantStatus status) {
         this.room = room;
         this.user = user;
         this.role = role == null ? ParticipantRole.MEMBER : role;
+        this.status = status == null ? ParticipantStatus.ACCEPTED : status;
     }
 
     @PrePersist
@@ -65,5 +73,13 @@ public class RoomParticipant {
 
     public void promoteToOwner() {
         this.role = ParticipantRole.OWNER;
+    }
+
+    public boolean isAccepted() {
+        return this.status == ParticipantStatus.ACCEPTED;
+    }
+
+    public void accept() {
+        this.status = ParticipantStatus.ACCEPTED;
     }
 }

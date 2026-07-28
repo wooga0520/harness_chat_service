@@ -4,6 +4,7 @@ import com.example.chatservice.chat.dto.ChatMessageResponse;
 import com.example.chatservice.domain.ChatMessage;
 import com.example.chatservice.domain.ChatRoom;
 import com.example.chatservice.domain.MessageType;
+import com.example.chatservice.domain.ParticipantStatus;
 import com.example.chatservice.domain.RoomParticipant;
 import com.example.chatservice.domain.User;
 import com.example.chatservice.repository.ChatMessageRepository;
@@ -148,9 +149,11 @@ class ChatServiceTest {
 
     @Test
     void publishesMessageWhenSenderIsARoomParticipant() {
+        RoomParticipant participant = RoomParticipant.builder().room(room).user(sender).build();
+
         when(userRepository.findByUsername("alice")).thenReturn(Optional.of(sender));
         when(chatRoomRepository.findById(10L)).thenReturn(Optional.of(room));
-        when(roomParticipantRepository.existsByRoomIdAndUserId(10L, 1L)).thenReturn(true);
+        when(roomParticipantRepository.findByRoomIdAndUserId(10L, 1L)).thenReturn(Optional.of(participant));
         when(chatMessageRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         chatService.sendMessage(10L, "alice", MessageType.TEXT, "hello");
@@ -193,7 +196,23 @@ class ChatServiceTest {
     void rejectsNonParticipantWith403() {
         when(userRepository.findByUsername("alice")).thenReturn(Optional.of(sender));
         when(chatRoomRepository.findById(10L)).thenReturn(Optional.of(room));
-        when(roomParticipantRepository.existsByRoomIdAndUserId(10L, 1L)).thenReturn(false);
+        when(roomParticipantRepository.findByRoomIdAndUserId(10L, 1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> chatService.sendMessage(10L, "alice", MessageType.TEXT, "hi"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasFieldOrPropertyWithValue("statusCode", HttpStatus.FORBIDDEN);
+
+        verifyNoInteractions(chatMessagePublisher);
+    }
+
+    @Test
+    void rejectsPendingSenderWith403() {
+        RoomParticipant pendingParticipant = RoomParticipant.builder().room(room).user(sender)
+                .status(ParticipantStatus.PENDING).build();
+
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(sender));
+        when(chatRoomRepository.findById(10L)).thenReturn(Optional.of(room));
+        when(roomParticipantRepository.findByRoomIdAndUserId(10L, 1L)).thenReturn(Optional.of(pendingParticipant));
 
         assertThatThrownBy(() -> chatService.sendMessage(10L, "alice", MessageType.TEXT, "hi"))
                 .isInstanceOf(ResponseStatusException.class)

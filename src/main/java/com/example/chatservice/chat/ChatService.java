@@ -7,6 +7,7 @@ import com.example.chatservice.chat.dto.TypingEvent;
 import com.example.chatservice.domain.ChatMessage;
 import com.example.chatservice.domain.ChatRoom;
 import com.example.chatservice.domain.MessageType;
+import com.example.chatservice.domain.ParticipantStatus;
 import com.example.chatservice.domain.RoomParticipant;
 import com.example.chatservice.domain.User;
 import com.example.chatservice.repository.ChatMessageRepository;
@@ -46,8 +47,9 @@ public class ChatService {
         ChatRoom room = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
 
-        if (!roomParticipantRepository.existsByRoomIdAndUserId(roomId, sender.getId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a participant of this room");
+        getAcceptedParticipant(roomId, sender.getId());
+        if (!room.isGroup() && roomParticipantRepository.existsByRoomIdAndStatus(roomId, ParticipantStatus.PENDING)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "The other user hasn't accepted this direct message yet");
         }
 
         ChatMessage message = ChatMessage.builder()
@@ -182,12 +184,24 @@ public class ChatService {
         User sender = userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unknown user"));
 
-        if (!roomParticipantRepository.existsByRoomIdAndUserId(roomId, sender.getId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a participant of this room");
-        }
+        getAcceptedParticipant(roomId, sender.getId());
 
         messagingTemplate.convertAndSend(
                 "/topic/rooms/" + roomId + "/typing",
                 new TypingEvent(roomId, sender.getUsername(), sender.getNickname(), typing));
+    }
+
+    /**
+     * Shared gate for sendMessage/broadcastTyping: the caller must be a participant AND have
+     * accepted their invite to this room (see RoomService.inviteMembers/getOrCreateDirectRoom,
+     * which add new invitees/DM targets as PENDING).
+     */
+    private RoomParticipant getAcceptedParticipant(Long roomId, Long userId) {
+        RoomParticipant participant = roomParticipantRepository.findByRoomIdAndUserId(roomId, userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a participant of this room"));
+        if (!participant.isAccepted()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You have not accepted the invite to this room yet");
+        }
+        return participant;
     }
 }

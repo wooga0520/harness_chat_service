@@ -6,6 +6,7 @@ import com.example.chatservice.chat.dto.ChatMessageResponse;
 import com.example.chatservice.domain.ChatRoom;
 import com.example.chatservice.domain.MessageType;
 import com.example.chatservice.domain.ParticipantRole;
+import com.example.chatservice.domain.ParticipantStatus;
 import com.example.chatservice.domain.RoomParticipant;
 import com.example.chatservice.domain.User;
 import com.example.chatservice.repository.ChatMessageRepository;
@@ -73,9 +74,11 @@ public class RoomService {
     }
 
     /**
-     * Any existing member may invite new members (no owner restriction). Usernames that
-     * are already participants or duplicate the requester are silently skipped rather than
-     * erroring, since a race with another invite/DM-creation shouldn't fail the whole call.
+     * Any existing member may invite new members (no owner restriction), but the requester
+     * must have accepted their own invite first. Usernames that are already participants or
+     * duplicate the requester are silently skipped rather than erroring, since a race with
+     * another invite/DM-creation shouldn't fail the whole call. Invitees are added as PENDING
+     * -- they can't send or receive messages in this room until they call acceptInvite.
      */
     @Transactional
     public void inviteMembers(Long roomId, String requesterUsername, List<String> usernames) {
@@ -86,8 +89,10 @@ public class RoomService {
         if (!room.isGroup()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot invite members to a direct message room");
         }
-        if (!roomParticipantRepository.existsByRoomIdAndUserId(roomId, requester.getId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a participant of this room");
+        RoomParticipant requesterParticipant = roomParticipantRepository.findByRoomIdAndUserId(roomId, requester.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a participant of this room"));
+        if (!requesterParticipant.isAccepted()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Accept your own invite to this room before inviting others");
         }
 
         List<User> invitees = usernames.stream()
@@ -102,7 +107,8 @@ public class RoomService {
         }
 
         invitees.forEach(invitee -> roomParticipantRepository.save(
-                RoomParticipant.builder().room(room).user(invitee).role(ParticipantRole.MEMBER).build()));
+                RoomParticipant.builder().room(room).user(invitee).role(ParticipantRole.MEMBER)
+                        .status(ParticipantStatus.PENDING).build()));
 
         String nicknames = invitees.stream().map(User::getNickname).collect(Collectors.joining(", "));
         chatService.sendMessage(roomId, requesterUsername, MessageType.INVITE,
@@ -161,7 +167,9 @@ public class RoomService {
      * Runs in its own REQUIRES_NEW transaction so a unique-constraint violation on
      * (direct_user1_id, direct_user2_id) only rolls back this insert attempt, not the
      * outer request transaction -- letting us fall back to re-reading the room that a
-     * concurrent request just created instead of the whole request failing.
+     * concurrent request just created instead of the whole request failing. The target is
+     * added as PENDING -- neither side can exchange messages in this room until the target
+     * calls acceptInvite (see ChatService.sendMessage's DM-wide pending check).
      */
     private ChatRoom createDirectRoom(User requester, User target) {
         TransactionTemplate requiresNew = new TransactionTemplate(transactionManager);
@@ -169,13 +177,67 @@ public class RoomService {
         try {
             return requiresNew.execute(status -> {
                 ChatRoom newRoom = chatRoomRepository.saveAndFlush(ChatRoom.newDirectRoom(requester.getId(), target.getId()));
-                roomParticipantRepository.save(RoomParticipant.builder().room(newRoom).user(requester).build());
-                roomParticipantRepository.save(RoomParticipant.builder().room(newRoom).user(target).build());
+                roomParticipantRepository.save(RoomParticipant.builder().room(newRoom).user(requester)
+                        .status(ParticipantStatus.ACCEPTED).build());
+                roomParticipantRepository.save(RoomParticipant.builder().room(newRoom).user(target)
+                        .status(ParticipantStatus.PENDING).build());
                 return newRoom;
             });
         } catch (DataIntegrityViolationException e) {
             return roomParticipantRepository.findDirectRoomBetween(requester.getId(), target.getId())
                     .orElseThrow(() -> e);
+        }
+    }
+
+    /**
+     * Accepts a pending invite (DM target or group inviteMembers invitee). Idempotent --
+     * calling this again once already accepted is a no-op rather than an error, since a
+     * client retry or double-click shouldn't fail. Group acceptance is announced in the room;
+     * DM acceptance is silent since there's no one else to announce it to besides the other
+     * participant, who already knows they sent the invite.
+     */
+    @Transactional
+    public void acceptInvite(Long roomId, String username) {
+        User user = getUser(username);
+        ChatRoom room = chatRoomRepository.findById(roomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
+        RoomParticipant participant = roomParticipantRepository.findByRoomIdAndUserId(roomId, user.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not invited to this room"));
+
+        if (participant.isAccepted()) {
+            return;
+        }
+        participant.accept();
+
+        if (room.isGroup()) {
+            chatService.sendMessage(roomId, username, MessageType.ACCEPT, user.getNickname() + "님이 초대를 수락했습니다.");
+        }
+    }
+
+    /**
+     * Declines a pending invite. For a group room this just removes the invitee's own
+     * participant row -- the rest of the room is unaffected. For a DM, a room with a pending
+     * participant can never have accumulated messages (ChatService.sendMessage blocks sends
+     * room-wide until both sides accept), so declining simply deletes the whole room; a later
+     * DM attempt between the same pair starts clean.
+     */
+    @Transactional
+    public void declineInvite(Long roomId, String username) {
+        User user = getUser(username);
+        ChatRoom room = chatRoomRepository.findById(roomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
+        RoomParticipant participant = roomParticipantRepository.findByRoomIdAndUserId(roomId, user.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not invited to this room"));
+
+        if (participant.isAccepted()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invite has already been accepted");
+        }
+
+        if (room.isGroup()) {
+            roomParticipantRepository.delete(participant);
+        } else {
+            roomParticipantRepository.deleteAll(roomParticipantRepository.findByRoomIdOrderByJoinedAtAsc(roomId));
+            chatRoomRepository.delete(room);
         }
     }
 
@@ -198,6 +260,9 @@ public class RoomService {
 
         RoomParticipant participant = roomParticipantRepository.findByRoomIdAndUserId(roomId, user.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a participant of this room"));
+        if (!participant.isAccepted()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Use the invite decline endpoint for a pending invite");
+        }
 
         chatService.sendMessage(roomId, username, MessageType.LEAVE, username + "님이 방을 나갔습니다.");
 
@@ -240,10 +305,13 @@ public class RoomService {
         }
         List<Long> roomIds = rooms.stream().map(ChatRoom::getId).collect(Collectors.toList());
 
-        Map<Long, List<String>> nicknamesByRoom = roomParticipantRepository.findByRoomIdIn(roomIds).stream()
-                .collect(Collectors.groupingBy(
-                        participant -> participant.getRoom().getId(),
-                        Collectors.mapping(participant -> participant.getUser().getNickname(), Collectors.toList())));
+        Map<Long, List<RoomParticipant>> participantsByRoom = roomParticipantRepository.findByRoomIdIn(roomIds).stream()
+                .collect(Collectors.groupingBy(participant -> participant.getRoom().getId()));
+
+        Map<Long, List<String>> nicknamesByRoom = participantsByRoom.entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().stream()
+                        .map(participant -> participant.getUser().getNickname())
+                        .collect(Collectors.toList())));
 
         Map<Long, RoomResponse.LastMessagePreview> lastMessageByRoom = chatMessageRepository.findLastMessagesForRooms(roomIds).stream()
                 .collect(Collectors.toMap(message -> message.getRoom().getId(), RoomResponse.LastMessagePreview::from));
@@ -252,11 +320,24 @@ public class RoomService {
                 .collect(Collectors.toMap(ChatMessageRepository.RoomUnreadCount::getRoomId, ChatMessageRepository.RoomUnreadCount::getUnread));
 
         return rooms.stream()
-                .map(room -> RoomResponse.of(
-                        room,
-                        nicknamesByRoom.getOrDefault(room.getId(), List.of()),
-                        lastMessageByRoom.get(room.getId()),
-                        unreadByRoom.getOrDefault(room.getId(), 0L)))
+                .map(room -> {
+                    List<RoomParticipant> participants = participantsByRoom.getOrDefault(room.getId(), List.of());
+                    boolean pendingForMe = participants.stream()
+                            .anyMatch(p -> p.getUser().getUsername().equals(username) && !p.isAccepted());
+                    boolean active = room.isGroup()
+                            ? participants.stream()
+                                    .filter(p -> p.getUser().getUsername().equals(username))
+                                    .allMatch(RoomParticipant::isAccepted)
+                            : participants.stream().allMatch(RoomParticipant::isAccepted);
+
+                    return RoomResponse.of(
+                            room,
+                            nicknamesByRoom.getOrDefault(room.getId(), List.of()),
+                            lastMessageByRoom.get(room.getId()),
+                            unreadByRoom.getOrDefault(room.getId(), 0L),
+                            pendingForMe,
+                            active);
+                })
                 .collect(Collectors.toList());
     }
 

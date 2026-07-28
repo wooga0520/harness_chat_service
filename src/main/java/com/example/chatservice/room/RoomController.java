@@ -58,6 +58,18 @@ public class RoomController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/{roomId}/accept")
+    public ResponseEntity<Void> acceptInvite(@PathVariable Long roomId, Principal principal) {
+        roomService.acceptInvite(roomId, principal.getName());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{roomId}/decline")
+    public ResponseEntity<Void> declineInvite(@PathVariable Long roomId, Principal principal) {
+        roomService.declineInvite(roomId, principal.getName());
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/{roomId}/members")
     public ResponseEntity<List<MemberResponse>> getMembers(@PathVariable Long roomId, Principal principal) {
         return ResponseEntity.ok(roomService.getMembers(roomId, principal.getName()));

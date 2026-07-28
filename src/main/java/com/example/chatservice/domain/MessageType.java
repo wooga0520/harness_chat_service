@@ -5,5 +5,6 @@ public enum MessageType {
     ENTER,
     LEAVE,
     INVITE,
-    KICK
+    KICK,
+    ACCEPT
 }

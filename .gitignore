@@ -1,5 +1,10 @@
 HELP.md
 target/
+
+### App config (contains real external-cloud credentials, never commit) ###
+src/main/resources/application.yml
+src/main/resources/application-dev.yml
+src/main/resources/application-prod.yml
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/

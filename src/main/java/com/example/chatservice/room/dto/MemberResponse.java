@@ -1,6 +1,7 @@
 package com.example.chatservice.room.dto;
 
 import com.example.chatservice.domain.ParticipantRole;
+import com.example.chatservice.domain.ParticipantStatus;
 import com.example.chatservice.domain.RoomParticipant;
 
 import java.time.LocalDateTime;
@@ -10,6 +11,7 @@ public record MemberResponse(
         String username,
         String nickname,
         ParticipantRole role,
+        ParticipantStatus status,
         boolean online,
         LocalDateTime lastReadAt
 ) {
@@ -19,6 +21,7 @@ public record MemberResponse(
                 participant.getUser().getUsername(),
                 participant.getUser().getNickname(),
                 participant.getRole(),
+                participant.getStatus(),
                 online,
                 participant.getLastReadAt()
         );

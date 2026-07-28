@@ -29,6 +29,22 @@
 	<properties>
 		<java.version>21</java.version>
 	</properties>
+	<profiles>
+		<!-- dev: 개발 -->
+		<profile>
+			<id>dev</id>
+			<properties>
+				<environment>dev</environment>
+			</properties>
+		</profile>
+		<!-- prd: 운영 -->
+		<profile>
+			<id>prod</id>
+			<properties>
+				<environment>prod</environment>
+			</properties>
+		</profile>
+	</profiles>
 	<dependencies>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

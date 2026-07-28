@@ -152,17 +152,40 @@ async function loadRooms() {
         rooms.forEach(room => {
             const li = document.createElement('li');
             const displayName = room.name || room.memberNicknames.join(', ');
+            const statusTag = room.pendingForMe
+                ? '<span class="room-status-tag pending">초대 수락 대기</span>'
+                : (!room.active ? '<span class="room-status-tag waiting">상대 수락 대기 중</span>' : '');
             li.innerHTML = `
                 <a href="/rooms/${room.id}">
-                    <div class="room-name">${escapeHtml(displayName)}${room.group ? '' : ' (DM)'}</div>
+                    <div class="room-name">${escapeHtml(displayName)}${room.group ? '' : ' (DM)'}${statusTag}</div>
                     <div class="room-members">${escapeHtml(room.memberNicknames.join(', '))}</div>
                 </a>
             `;
+            if (room.pendingForMe) {
+                const actions = document.createElement('div');
+                actions.className = 'room-invite-actions';
+                actions.innerHTML = `
+                    <button type="button" class="btn accept-invite-btn">수락</button>
+                    <button type="button" class="btn secondary decline-invite-btn">거절</button>
+                `;
+                actions.querySelector('.accept-invite-btn').addEventListener('click', () => respondToInvite(room.id, 'accept'));
+                actions.querySelector('.decline-invite-btn').addEventListener('click', () => respondToInvite(room.id, 'decline'));
+                li.appendChild(actions);
+            }
             listEl.appendChild(li);
         });
     } catch (err) {
         listEl.innerHTML = '<li class="empty-hint">채팅방 목록을 불러오지 못했습니다.</li>';
     }
+}
+
+async function respondToInvite(roomId, action) {
+    try {
+        await AUTH.apiFetch('/api/rooms/' + roomId + '/' + action, { method: 'POST' });
+    } catch (err) {
+        // best-effort; list refresh below will reflect whatever the server actually did
+    }
+    loadRooms();
 }
 
 function escapeHtml(str) {

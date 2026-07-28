@@ -68,6 +68,10 @@ class RoomReadReceiptTest extends AbstractIntegrationTest {
                 .andReturn();
         long roomId = objectMapper.readTree(dmResult.getResponse().getContentAsString()).get("id").asLong();
 
+        mockMvc.perform(post("/api/rooms/{roomId}/accept", roomId)
+                        .header("Authorization", bearerBob))
+                .andExpect(status().isNoContent());
+
         chatService.sendMessage(roomId, aliceName, MessageType.TEXT, "hi bob");
         chatService.sendMessage(roomId, aliceName, MessageType.TEXT, "you there?");
 
