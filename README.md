@@ -1,6 +1,7 @@
 # chat_service
 
 Spring Boot 기반 실시간 채팅 서비스입니다. 그룹 채팅방과 1:1 DM, JWT 인증, STOMP-over-WebSocket 실시간 메시징을 지원합니다.
+-- 09/01 하네스 엔지니어링 중지
 
 ## 주요 기능
 
